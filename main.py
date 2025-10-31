@@ -14,14 +14,19 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout)  # Выводим в stdout для Render
-    ]
+        logging.StreamHandler(sys.stdout)
+    ],
+    force=True  # Переопределяем существующую конфигурацию
 )
+logging.getLogger().setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Отключаем буферизацию stdout
+sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
+
 # Также настроим логирование для telebot
-telebot_logger = logging.getLogger('telebot')
-telebot_logger.setLevel(logging.DEBUG)
+telebot_logger = logging.getLogger('TeleBot')
+telebot_logger.setLevel(logging.INFO)
 
 # --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
 BOT_USERNAME = "mrpolygraph_bot"
@@ -42,8 +47,13 @@ LOCAL_STICKER_PATHS = [
 bot = telebot.TeleBot(API_TOKEN)
 app = Flask(__name__)
 
+# КРИТИЧЕСКИ ВАЖНО: Логи СРАЗУ после инициализации
+print("=" * 60, flush=True)
+print("🤖 BOT INITIALIZATION STARTED", flush=True)
+print("=" * 60, flush=True)
 logger.info("🤖 TeleBot инициализирован")
 logger.info("🌐 Flask app создан")
+sys.stdout.flush()
 
 
 # ----------------------------------------------------------------------
@@ -75,6 +85,11 @@ def webhook():
                 logger.info(f"📨 Тип сообщения: callback_query")
             else:
                 logger.warning(f"⚠️ Неизвестный тип update: {update}")
+            
+            # 🔍 ПРОВЕРЯЕМ ЗАРЕГИСТРИРОВАННЫЕ ОБРАБОТЧИКИ
+            logger.info(f"🔍 Всего обработчиков в боте: {len(bot.message_handlers)}")
+            for i, handler in enumerate(bot.message_handlers):
+                logger.info(f"   Handler {i}: {handler}")
             
             bot.process_new_updates([update])
             logger.info("✅ Update обработан успешно")
@@ -160,16 +175,20 @@ def query_text(inline_query):
 # ----------------------------------------------------------------------
 # 💬 4. РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ (ДО ВЫЗОВА setup_bot!)
 # ----------------------------------------------------------------------
-logger.info("=" * 60)
+print("=" * 60, flush=True)
+print("📋 REGISTERING MESSAGE HANDLERS", flush=True)
+print("=" * 60, flush=True)
 logger.info("📋 РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ КОМАНД")
-logger.info("=" * 60)
+sys.stdout.flush()
 
 @bot.message_handler(commands=['check'])
 def handle_check(message):
     logger.info(f"💬 ОБРАБОТЧИК /check СРАБОТАЛ! user_id={message.from_user.id}")
     send_random_content_handler(message)
 
+print("✅ Handler registered: commands=['check']", flush=True)
 logger.info("✅ Обработчик: commands=['check']")
+sys.stdout.flush()
 
 
 @bot.message_handler(content_types=['photo'], regexp='^/check($|\\s.*)')
@@ -177,7 +196,9 @@ def handle_photo_caption_check(message):
     logger.info(f"📸 ОБРАБОТЧИК photo+/check СРАБОТАЛ! user_id={message.from_user.id}")
     send_random_content_handler(message)
 
+print("✅ Handler registered: photo + /check", flush=True)
 logger.info("✅ Обработчик: photo + /check")
+sys.stdout.flush()
 
 
 @bot.message_handler(content_types=['text'])
@@ -189,7 +210,9 @@ def send_random_image(message):
     else:
         logger.info(f"⏭️ Сообщение не содержит @{BOT_USERNAME}")
 
+print("✅ Handler registered: text", flush=True)
 logger.info("✅ Обработчик: content_types=['text']")
+sys.stdout.flush()
 
 
 @bot.message_handler(func=lambda m: True, content_types=['text', 'photo', 'document', 'sticker'])
@@ -197,8 +220,12 @@ def fallback_handler(message):
     logger.warning(f"⚠️ FALLBACK сработал для {message.from_user.id}")
     bot.reply_to(message, "Попробуйте команду /check")
 
+print("✅ Handler registered: fallback", flush=True)
 logger.info("✅ Обработчик: fallback (func=lambda)")
-logger.info("=" * 60)
+print("=" * 60, flush=True)
+print("📋 ALL HANDLERS REGISTERED!", flush=True)
+print("=" * 60, flush=True)
+sys.stdout.flush()
 
 
 # ----------------------------------------------------------------------
