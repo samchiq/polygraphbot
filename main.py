@@ -66,7 +66,6 @@ def webhook():
         if request.headers.get('content-type') == 'application/json':
             json_string = request.get_data().decode('utf-8')
             logger.info(f"📥 Получен webhook от Telegram (длина: {len(json_string)})")
-            logger.debug(f"📥 Содержимое webhook: {json_string}")
             
             update = telebot.types.Update.de_json(json_string)
             logger.info(f"✅ Webhook распарсен, обрабатываем update_id: {update.update_id}")
@@ -78,20 +77,15 @@ def webhook():
                 logger.info(f"   👤 От: {msg.from_user.id} (@{msg.from_user.username})")
                 logger.info(f"   💬 Текст: '{msg.text}'")
                 logger.info(f"   📋 Content type: {msg.content_type}")
-                logger.info(f"   🏷️ Entities: {msg.entities}")
-            elif update.inline_query:
-                logger.info(f"📨 Тип сообщения: inline_query")
-            elif update.callback_query:
-                logger.info(f"📨 Тип сообщения: callback_query")
-            else:
-                logger.warning(f"⚠️ Неизвестный тип update: {update}")
             
             # 🔍 ПРОВЕРЯЕМ ЗАРЕГИСТРИРОВАННЫЕ ОБРАБОТЧИКИ
-            logger.info(f"🔍 Всего обработчиков в боте: {len(bot.message_handlers)}")
-            for i, handler in enumerate(bot.message_handlers):
-                logger.info(f"   Handler {i}: {handler}")
+            logger.info(f"🔍 Всего обработчиков: {len(bot.message_handlers)}")
             
-            bot.process_new_updates([update])
+            # ⚠️ КРИТИЧЕСКИ ВАЖНО: Используем правильный метод!
+            # process_new_updates НЕ РАБОТАЕТ для одиночных update в webhook режиме
+            # Нужно использовать внутренний метод обработки
+            bot.process_new_messages([update.message] if update.message else [])
+            
             logger.info("✅ Update обработан успешно")
             return '', 200
     except Exception as e:
