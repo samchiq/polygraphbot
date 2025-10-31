@@ -106,13 +106,26 @@ def webhook():
                             logger.info(f"      Commands filter: {filters['commands']}")
                             # Проверяем, является ли сообщение командой
                             if msg.entities and msg.entities[0].type == 'bot_command':
-                                command = msg.text.split()[0][1:]  # Убираем '/'
+                                # Поддержка команд с @username для групп
+                                command_text = msg.text.split()[0][1:]  # Убираем '/'
+                                # Убираем @bot_username если есть
+                                command = command_text.split('@')[0]
                                 logger.info(f"      Найдена команда: {command}")
                                 if command in filters['commands']:
                                     logger.info(f"      ✅ Фильтр совпал! Вызываем обработчик...")
                                     handler_func(msg)
                                     logger.info(f"      ✅ Обработчик выполнен!")
-                                    break
+                                    return '', 200  # Прерываем цикл после успешного выполнения
+                        
+                        # Проверяем текстовые обработчики (для упоминаний @bot)
+                        elif 'content_types' in filters and 'text' in filters['content_types']:
+                            if msg.content_type == 'text':
+                                logger.info(f"      Text handler, проверяем текст...")
+                                # Вызываем обработчик, он сам проверит условия
+                                handler_func(msg)
+                                logger.info(f"      ✅ Text handler выполнен!")
+                                # Не прерываем, так как может быть несколько текстовых обработчиков
+                                
                 except Exception as e:
                     logger.error(f"   ❌ Ошибка ручной обработки: {e}", exc_info=True)
             
@@ -228,14 +241,16 @@ sys.stdout.flush()
 @bot.message_handler(content_types=['text'])
 def send_random_image(message):
     logger.info(f"📝 ОБРАБОТЧИК text СРАБОТАЛ от {message.from_user.id}: '{message.text[:50]}'")
+    logger.info(f"   🔍 Проверяем наличие @{BOT_USERNAME} в тексте...")
+    
     if f'@{BOT_USERNAME}' in message.text:
-        logger.info(f"✅ Найдено упоминание @{BOT_USERNAME}")
+        logger.info(f"   ✅ Найдено упоминание @{BOT_USERNAME}!")
         send_random_content_handler(message)
     else:
-        logger.info(f"⏭️ Сообщение не содержит @{BOT_USERNAME}")
+        logger.info(f"   ⏭️ Упоминания @{BOT_USERNAME} не найдено")
 
-print("✅ Handler registered: text", flush=True)
-logger.info("✅ Обработчик: content_types=['text']")
+print("✅ Handler registered: text (with @mention check)", flush=True)
+logger.info("✅ Обработчик: content_types=['text'] с проверкой упоминания")
 sys.stdout.flush()
 
 
