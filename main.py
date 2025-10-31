@@ -53,10 +53,25 @@ def webhook():
         if request.headers.get('content-type') == 'application/json':
             json_string = request.get_data().decode('utf-8')
             logger.info(f"📥 Получен webhook от Telegram (длина: {len(json_string)})")
-            logger.debug(f"📥 Содержимое webhook: {json_string[:200]}...")
+            logger.debug(f"📥 Содержимое webhook: {json_string}")
             
             update = telebot.types.Update.de_json(json_string)
             logger.info(f"✅ Webhook распарсен, обрабатываем update_id: {update.update_id}")
+            
+            # 🔍 ДИАГНОСТИКА: Смотрим что внутри update
+            if update.message:
+                msg = update.message
+                logger.info(f"📨 Тип сообщения: message")
+                logger.info(f"   👤 От: {msg.from_user.id} (@{msg.from_user.username})")
+                logger.info(f"   💬 Текст: '{msg.text}'")
+                logger.info(f"   📋 Content type: {msg.content_type}")
+                logger.info(f"   🏷️ Entities: {msg.entities}")
+            elif update.inline_query:
+                logger.info(f"📨 Тип сообщения: inline_query")
+            elif update.callback_query:
+                logger.info(f"📨 Тип сообщения: callback_query")
+            else:
+                logger.warning(f"⚠️ Неизвестный тип update: {update}")
             
             bot.process_new_updates([update])
             logger.info("✅ Update обработан успешно")
@@ -150,18 +165,28 @@ def handle_photo_caption_check(message):
 
 @bot.message_handler(commands=['check'])
 def handle_check(message):
-    logger.info(f"💬 Команда /check от user_id={message.from_user.id}, username=@{message.from_user.username}")
+    logger.info(f"💬 ОБРАБОТЧИК /check СРАБОТАЛ! user_id={message.from_user.id}, username=@{message.from_user.username}")
     send_random_content_handler(message)
 
 
 @bot.message_handler(content_types=['text'])
 def send_random_image(message):
-    logger.info(f"📝 Получено текстовое сообщение от {message.from_user.id}: '{message.text[:50]}'")
+    logger.info(f"📝 ОБРАБОТЧИК text СРАБОТАЛ! Сообщение от {message.from_user.id}: '{message.text[:50]}'")
     if f'@{BOT_USERNAME}' in message.text:
         logger.info(f"✅ Найдено упоминание @{BOT_USERNAME}")
         send_random_content_handler(message)
     else:
         logger.info(f"⏭️ Сообщение не содержит @{BOT_USERNAME}, игнорируем")
+
+
+# 🆕 ДОБАВИМ FALLBACK-ОБРАБОТЧИК ДЛЯ ВСЕХ СООБЩЕНИЙ
+@bot.message_handler(func=lambda message: True, content_types=['text', 'photo', 'document', 'sticker'])
+def fallback_handler(message):
+    logger.warning(f"⚠️ FALLBACK: Ни один обработчик не сработал для сообщения от {message.from_user.id}")
+    logger.warning(f"   Текст: '{message.text if message.text else 'N/A'}'")
+    logger.warning(f"   Content type: {message.content_type}")
+    # Отправим ответ, чтобы понять что бот жив
+    bot.reply_to(message, "Я получил ваше сообщение, но не смог его обработать. Попробуйте команду /check")
 
 
 # ----------------------------------------------------------------------
