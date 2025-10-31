@@ -68,25 +68,55 @@ def webhook():
             logger.info(f"📥 Получен webhook от Telegram (длина: {len(json_string)})")
             
             update = telebot.types.Update.de_json(json_string)
-            logger.info(f"✅ Webhook распарсен, обрабатываем update_id: {update.update_id}")
+            logger.info(f"✅ Webhook распарсен, update_id: {update.update_id}")
             
-            # 🔍 ДИАГНОСТИКА: Смотрим что внутри update
+            # 🔍 ДИАГНОСТИКА
             if update.message:
                 msg = update.message
-                logger.info(f"📨 Тип сообщения: message")
+                logger.info(f"📨 Тип: message")
                 logger.info(f"   👤 От: {msg.from_user.id} (@{msg.from_user.username})")
                 logger.info(f"   💬 Текст: '{msg.text}'")
                 logger.info(f"   📋 Content type: {msg.content_type}")
+                
+                # 🔍 Проверяем entities
+                if msg.entities:
+                    for entity in msg.entities:
+                        logger.info(f"   🏷️ Entity: type={entity.type}, offset={entity.offset}, length={entity.length}")
+                
+                logger.info(f"🔍 Обработчиков: {len(bot.message_handlers)}")
+                
+                # ⚠️ ПРОБУЕМ ВСЕ МЕТОДЫ ОБРАБОТКИ
+                logger.info("🔧 Попытка 1: process_new_messages")
+                try:
+                    bot.process_new_messages([msg])
+                    logger.info("   ✅ process_new_messages выполнен")
+                except Exception as e:
+                    logger.error(f"   ❌ Ошибка: {e}")
+                
+                logger.info("🔧 Попытка 2: _test_message_handler (вручную)")
+                try:
+                    # Проверяем каждый обработчик вручную
+                    for i, handler_dict in enumerate(bot.message_handlers):
+                        logger.info(f"   Тестируем Handler {i}...")
+                        handler_func = handler_dict['function']
+                        filters = handler_dict.get('filters', {})
+                        
+                        # Проверяем фильтры
+                        if 'commands' in filters:
+                            logger.info(f"      Commands filter: {filters['commands']}")
+                            # Проверяем, является ли сообщение командой
+                            if msg.entities and msg.entities[0].type == 'bot_command':
+                                command = msg.text.split()[0][1:]  # Убираем '/'
+                                logger.info(f"      Найдена команда: {command}")
+                                if command in filters['commands']:
+                                    logger.info(f"      ✅ Фильтр совпал! Вызываем обработчик...")
+                                    handler_func(msg)
+                                    logger.info(f"      ✅ Обработчик выполнен!")
+                                    break
+                except Exception as e:
+                    logger.error(f"   ❌ Ошибка ручной обработки: {e}", exc_info=True)
             
-            # 🔍 ПРОВЕРЯЕМ ЗАРЕГИСТРИРОВАННЫЕ ОБРАБОТЧИКИ
-            logger.info(f"🔍 Всего обработчиков: {len(bot.message_handlers)}")
-            
-            # ⚠️ КРИТИЧЕСКИ ВАЖНО: Используем правильный метод!
-            # process_new_updates НЕ РАБОТАЕТ для одиночных update в webhook режиме
-            # Нужно использовать внутренний метод обработки
-            bot.process_new_messages([update.message] if update.message else [])
-            
-            logger.info("✅ Update обработан успешно")
+            logger.info("✅ Webhook обработан")
             return '', 200
     except Exception as e:
         logger.error(f"❌ ОШИБКА в webhook: {e}", exc_info=True)
