@@ -44,6 +44,9 @@ LOCAL_STICKER_PATHS = [
     'sticker2.webp'
 ]
 
+# 💾 Кэш file_id стикеров (заполняется при старте)
+STICKER_FILE_IDS = []
+
 bot = telebot.TeleBot(API_TOKEN)
 app = Flask(__name__)
 
@@ -73,61 +76,34 @@ def webhook():
             # 🔍 ДИАГНОСТИКА
             if update.message:
                 msg = update.message
-                logger.info(f"📨 Тип: message")
-                logger.info(f"   👤 От: {msg.from_user.id} (@{msg.from_user.username})")
-                logger.info(f"   💬 Текст: '{msg.text}'")
-                logger.info(f"   📋 Content type: {msg.content_type}")
                 
-                # 🔍 Проверяем entities
-                if msg.entities:
-                    for entity in msg.entities:
-                        logger.info(f"   🏷️ Entity: type={entity.type}, offset={entity.offset}, length={entity.length}")
-                
-                logger.info(f"🔍 Обработчиков: {len(bot.message_handlers)}")
-                
-                # ⚠️ ПРОБУЕМ ВСЕ МЕТОДЫ ОБРАБОТКИ
-                logger.info("🔧 Попытка 1: process_new_messages")
-                try:
-                    bot.process_new_messages([msg])
-                    logger.info("   ✅ process_new_messages выполнен")
-                except Exception as e:
-                    logger.error(f"   ❌ Ошибка: {e}")
-                
-                logger.info("🔧 Попытка 2: _test_message_handler (вручную)")
+                # ⚠️ ОБРАБОТКА СООБЩЕНИЙ
                 try:
                     # Проверяем каждый обработчик вручную
                     for i, handler_dict in enumerate(bot.message_handlers):
-                        logger.info(f"   Тестируем Handler {i}...")
                         handler_func = handler_dict['function']
                         filters = handler_dict.get('filters', {})
                         
-                        # Проверяем фильтры
+                        # Проверяем фильтры команд
                         if 'commands' in filters:
-                            logger.info(f"      Commands filter: {filters['commands']}")
                             # Проверяем, является ли сообщение командой
                             if msg.entities and msg.entities[0].type == 'bot_command':
                                 # Поддержка команд с @username для групп
                                 command_text = msg.text.split()[0][1:]  # Убираем '/'
                                 # Убираем @bot_username если есть
                                 command = command_text.split('@')[0]
-                                logger.info(f"      Найдена команда: {command}")
                                 if command in filters['commands']:
-                                    logger.info(f"      ✅ Фильтр совпал! Вызываем обработчик...")
                                     handler_func(msg)
-                                    logger.info(f"      ✅ Обработчик выполнен!")
-                                    return '', 200  # Прерываем цикл после успешного выполнения
+                                    return '', 200
                         
                         # Проверяем текстовые обработчики (для упоминаний @bot)
                         elif 'content_types' in filters and 'text' in filters['content_types']:
                             if msg.content_type == 'text':
-                                logger.info(f"      Text handler, проверяем текст...")
                                 # Вызываем обработчик, он сам проверит условия
                                 handler_func(msg)
-                                logger.info(f"      ✅ Text handler выполнен!")
-                                # Не прерываем, так как может быть несколько текстовых обработчиков
                                 
                 except Exception as e:
-                    logger.error(f"   ❌ Ошибка ручной обработки: {e}", exc_info=True)
+                    logger.error(f"❌ Ошибка обработки: {e}", exc_info=True)
             
             logger.info("✅ Webhook обработан")
             return '', 200
@@ -143,50 +119,57 @@ def webhook():
 # 🖼️ 2. ФУНКЦИЯ ОТПРАВКИ КОНТЕНТА
 # ----------------------------------------------------------------------
 def send_random_content_handler(message):
-    """Отправляет случайный стикер из локальных файлов."""
-    logger.info(f"🎯 send_random_content_handler вызван для chat_id={message.chat.id}, user={message.from_user.id}")
+    """Отправляет случайный стикер, используя кэшированный file_id."""
     
-    # Проверяем, что файлы существуют
+    # Если есть кэш - используем его
+    if STICKER_FILE_IDS:
+        reply_id = message.reply_to_message.message_id if message.reply_to_message else message.message_id
+        selected_file_id = random.choice(STICKER_FILE_IDS)
+
+        try:
+            # Отправляем по file_id - мгновенно, без повторной загрузки!
+            bot.send_sticker(
+                chat_id=message.chat.id,
+                sticker=selected_file_id, 
+                reply_to_message_id=reply_id
+            )
+            return
+        except Exception as e:
+            logger.error(f"❌ Ошибка при отправке по file_id: {e}")
+    
+    # Fallback: если кэша нет, загружаем файл напрямую
+    logger.warning("⚠️ Кэш file_id пуст, загружаем файл напрямую")
     existing_stickers = [path for path in LOCAL_STICKER_PATHS if os.path.exists(path)]
     
     if not existing_stickers:
-        logger.error(f"❌ Ни один файл стикера не найден!")
-        logger.error(f"   Текущая директория: {os.getcwd()}")
-        logger.error(f"   Файлы в директории: {os.listdir()}")
-        bot.reply_to(message, "🚫 Ошибка: Файлы стикеров не найдены на сервере.")
+        logger.error(f"❌ Файлы стикеров не найдены!")
+        bot.reply_to(message, "🚫 Ошибка: Стикеры недоступны.")
         return
     
     reply_id = message.reply_to_message.message_id if message.reply_to_message else message.message_id
-    
-    # Выбираем случайный стикер
     selected_sticker = random.choice(existing_stickers)
-    logger.info(f"✅ Выбран стикер: {selected_sticker}")
 
     try:
-        # Открываем файл и отправляем как стикер
         with open(selected_sticker, 'rb') as sticker_file:
-            logger.info(f"📤 Отправляем стикер в чат {message.chat.id}...")
-            result = bot.send_sticker(
+            bot.send_sticker(
                 chat_id=message.chat.id,
                 sticker=sticker_file, 
                 reply_to_message_id=reply_id
             )
-            logger.info(f"✅ Стикер отправлен успешно! Message ID: {result.message_id}")
-        
-    except FileNotFoundError:
-        logger.error(f"❌ Файл не найден: {selected_sticker}")
-        bot.reply_to(message, f"🚫 Файл {selected_sticker} не найден.")
     except Exception as e:
-        logger.error(f"❌ Ошибка при отправке стикера: {type(e).__name__}: {e}", exc_info=True)
-        bot.reply_to(message, f"🚫 Ошибка при отправке: {e}")
+        logger.error(f"❌ Ошибка при отправке стикера: {e}", exc_info=True)
+        bot.reply_to(message, f"🚫 Ошибка при отправке.")
 
 
 # ----------------------------------------------------------------------
 # 3. INLINE-ОБРАБОТЧИК
 # ----------------------------------------------------------------------
+print("=" * 60, flush=True)
+print("📋 REGISTERING INLINE HANDLER", flush=True)
+print("=" * 60, flush=True)
+
 @bot.inline_handler(lambda query: True)
 def query_text(inline_query):
-    logger.info(f"🔍 Получен inline query от {inline_query.from_user.id}: '{inline_query.query}'")
     user_query = inline_query.query
 
     if user_query:
@@ -204,9 +187,11 @@ def query_text(inline_query):
 
     try:
         bot.answer_inline_query(inline_query.id, [r], cache_time=0)
-        logger.info(f"✅ Inline query обработан")
     except Exception as e:
         logger.error(f"❌ Ошибка в inline-обработчике: {e}", exc_info=True)
+
+print("✅ Inline handler registered", flush=True)
+sys.stdout.flush()
 
 
 # ----------------------------------------------------------------------
@@ -220,47 +205,30 @@ sys.stdout.flush()
 
 @bot.message_handler(commands=['check'])
 def handle_check(message):
-    logger.info(f"💬 ОБРАБОТЧИК /check СРАБОТАЛ! user_id={message.from_user.id}")
     send_random_content_handler(message)
 
 print("✅ Handler registered: commands=['check']", flush=True)
-logger.info("✅ Обработчик: commands=['check']")
 sys.stdout.flush()
 
 
 @bot.message_handler(content_types=['photo'], regexp='^/check($|\\s.*)')
 def handle_photo_caption_check(message):
-    logger.info(f"📸 ОБРАБОТЧИК photo+/check СРАБОТАЛ! user_id={message.from_user.id}")
     send_random_content_handler(message)
 
 print("✅ Handler registered: photo + /check", flush=True)
-logger.info("✅ Обработчик: photo + /check")
 sys.stdout.flush()
 
 
 @bot.message_handler(content_types=['text'])
 def send_random_image(message):
-    logger.info(f"📝 ОБРАБОТЧИК text СРАБОТАЛ от {message.from_user.id}: '{message.text[:50]}'")
-    logger.info(f"   🔍 Проверяем наличие @{BOT_USERNAME} в тексте...")
-    
     if f'@{BOT_USERNAME}' in message.text:
-        logger.info(f"   ✅ Найдено упоминание @{BOT_USERNAME}!")
         send_random_content_handler(message)
-    else:
-        logger.info(f"   ⏭️ Упоминания @{BOT_USERNAME} не найдено")
 
 print("✅ Handler registered: text (with @mention check)", flush=True)
-logger.info("✅ Обработчик: content_types=['text'] с проверкой упоминания")
 sys.stdout.flush()
 
 
-@bot.message_handler(func=lambda m: True, content_types=['text', 'photo', 'document', 'sticker'])
-def fallback_handler(message):
-    logger.warning(f"⚠️ FALLBACK сработал для {message.from_user.id}")
-    bot.reply_to(message, "Попробуйте команду /check")
-
-print("✅ Handler registered: fallback", flush=True)
-logger.info("✅ Обработчик: fallback (func=lambda)")
+# Убираем fallback handler - он больше не нужен
 print("=" * 60, flush=True)
 print("📋 ALL HANDLERS REGISTERED!", flush=True)
 print("=" * 60, flush=True)
@@ -289,6 +257,47 @@ def health():
 # ----------------------------------------------------------------------
 # 🚀 6. ИНИЦИАЛИЗАЦИЯ БОТА (ВЫПОЛНЯЕТСЯ ВСЕГДА!)
 # ----------------------------------------------------------------------
+def upload_stickers_and_cache_ids():
+    """Загружает стикеры один раз и кэширует их file_id."""
+    global STICKER_FILE_IDS
+    STICKER_FILE_IDS = []
+    
+    logger.info("📤 Загрузка стикеров и кэширование file_id...")
+    
+    # Нужен chat_id для отправки тестовых стикеров
+    # Используем переменную окружения или отправляем в Saved Messages
+    test_chat_id = os.environ.get('ADMIN_CHAT_ID')
+    
+    if not test_chat_id:
+        logger.warning("⚠️ ADMIN_CHAT_ID не установлен, пропускаем кэширование file_id")
+        logger.warning("⚠️ Будет использоваться загрузка файлов каждый раз")
+        return
+    
+    for sticker_path in LOCAL_STICKER_PATHS:
+        try:
+            if not os.path.exists(sticker_path):
+                logger.error(f"   ❌ {sticker_path} не найден!")
+                continue
+                
+            with open(sticker_path, 'rb') as sticker_file:
+                # Отправляем стикер для получения file_id
+                msg = bot.send_sticker(chat_id=test_chat_id, sticker=sticker_file)
+                file_id = msg.sticker.file_id
+                STICKER_FILE_IDS.append(file_id)
+                logger.info(f"   ✅ {sticker_path} → file_id кэширован")
+                
+                # Удаляем тестовое сообщение
+                try:
+                    bot.delete_message(test_chat_id, msg.message_id)
+                except:
+                    pass
+                    
+        except Exception as e:
+            logger.error(f"   ❌ Ошибка загрузки {sticker_path}: {e}")
+    
+    logger.info(f"✅ Кэшировано file_id: {len(STICKER_FILE_IDS)} стикеров")
+
+
 def setup_bot():
     """Настройка бота - вызывается при импорте модуля"""
     logger.info("=" * 60)
@@ -305,6 +314,9 @@ def setup_bot():
         else:
             logger.error(f"   ❌ {sticker_path} НЕ НАЙДЕН!")
     
+    # Загружаем стикеры и кэшируем file_id
+    upload_stickers_and_cache_ids()
+    
     # Установка webhook
     logger.info("🌐 Установка webhook...")
     try:
@@ -314,17 +326,13 @@ def setup_bot():
         
         if s:
             logger.info(f"   ✅ Webhook установлен: {WEBHOOK_URL}")
-            webhook_info = bot.get_webhook_info()
-            logger.info(f"   📊 Pending updates: {webhook_info.pending_update_count}")
-            if webhook_info.last_error_date:
-                logger.warning(f"   ⚠️ Ошибка: {webhook_info.last_error_message}")
         else:
             logger.error("   ❌ Ошибка установки webhook")
     except Exception as e:
         logger.error(f"   ❌ КРИТИЧЕСКАЯ ОШИБКА: {e}", exc_info=True)
     
     logger.info("=" * 60)
-    logger.info("✅ БОТА ГОТОВ К РАБОТЕ")
+    logger.info("✅ БОТ ГОТОВ К РАБОТЕ")
     logger.info("=" * 60)
     sys.stdout.flush()
 
