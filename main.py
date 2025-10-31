@@ -42,6 +42,9 @@ LOCAL_STICKER_PATHS = [
 bot = telebot.TeleBot(API_TOKEN)
 app = Flask(__name__)
 
+logger.info("🤖 TeleBot инициализирован")
+logger.info("🌐 Flask app создан")
+
 
 # ----------------------------------------------------------------------
 # 🌐 1. WEBHOOK ОБРАБОТЧИК 
@@ -155,42 +158,51 @@ def query_text(inline_query):
 
 
 # ----------------------------------------------------------------------
-# 💬 4. ОСНОВНОЙ ОБРАБОТЧИК
+# 💬 4. РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ (ДО ВЫЗОВА setup_bot!)
 # ----------------------------------------------------------------------
-@bot.message_handler(content_types=['photo'], regexp='^/check($|\\s.*)')
-def handle_photo_caption_check(message):
-    logger.info(f"📸 Команда /check с фото от user_id={message.from_user.id}")
-    send_random_content_handler(message)
-
+logger.info("=" * 60)
+logger.info("📋 РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ КОМАНД")
+logger.info("=" * 60)
 
 @bot.message_handler(commands=['check'])
 def handle_check(message):
-    logger.info(f"💬 ОБРАБОТЧИК /check СРАБОТАЛ! user_id={message.from_user.id}, username=@{message.from_user.username}")
+    logger.info(f"💬 ОБРАБОТЧИК /check СРАБОТАЛ! user_id={message.from_user.id}")
     send_random_content_handler(message)
+
+logger.info("✅ Обработчик: commands=['check']")
+
+
+@bot.message_handler(content_types=['photo'], regexp='^/check($|\\s.*)')
+def handle_photo_caption_check(message):
+    logger.info(f"📸 ОБРАБОТЧИК photo+/check СРАБОТАЛ! user_id={message.from_user.id}")
+    send_random_content_handler(message)
+
+logger.info("✅ Обработчик: photo + /check")
 
 
 @bot.message_handler(content_types=['text'])
 def send_random_image(message):
-    logger.info(f"📝 ОБРАБОТЧИК text СРАБОТАЛ! Сообщение от {message.from_user.id}: '{message.text[:50]}'")
+    logger.info(f"📝 ОБРАБОТЧИК text СРАБОТАЛ от {message.from_user.id}: '{message.text[:50]}'")
     if f'@{BOT_USERNAME}' in message.text:
         logger.info(f"✅ Найдено упоминание @{BOT_USERNAME}")
         send_random_content_handler(message)
     else:
-        logger.info(f"⏭️ Сообщение не содержит @{BOT_USERNAME}, игнорируем")
+        logger.info(f"⏭️ Сообщение не содержит @{BOT_USERNAME}")
+
+logger.info("✅ Обработчик: content_types=['text']")
 
 
-# 🆕 ДОБАВИМ FALLBACK-ОБРАБОТЧИК ДЛЯ ВСЕХ СООБЩЕНИЙ
-@bot.message_handler(func=lambda message: True, content_types=['text', 'photo', 'document', 'sticker'])
+@bot.message_handler(func=lambda m: True, content_types=['text', 'photo', 'document', 'sticker'])
 def fallback_handler(message):
-    logger.warning(f"⚠️ FALLBACK: Ни один обработчик не сработал для сообщения от {message.from_user.id}")
-    logger.warning(f"   Текст: '{message.text if message.text else 'N/A'}'")
-    logger.warning(f"   Content type: {message.content_type}")
-    # Отправим ответ, чтобы понять что бот жив
-    bot.reply_to(message, "Я получил ваше сообщение, но не смог его обработать. Попробуйте команду /check")
+    logger.warning(f"⚠️ FALLBACK сработал для {message.from_user.id}")
+    bot.reply_to(message, "Попробуйте команду /check")
+
+logger.info("✅ Обработчик: fallback (func=lambda)")
+logger.info("=" * 60)
 
 
 # ----------------------------------------------------------------------
-# 📝 HEALTHCHECK ENDPOINT
+# 📝 5. HEALTHCHECK ENDPOINT
 # ----------------------------------------------------------------------
 @app.route('/health', methods=['GET'])
 def health():
@@ -209,61 +221,54 @@ def health():
 
 
 # ----------------------------------------------------------------------
-# 🚀 5. ИНИЦИАЛИЗАЦИЯ БОТА (ВЫПОЛНЯЕТСЯ ВСЕГДА!)
+# 🚀 6. ИНИЦИАЛИЗАЦИЯ БОТА (ВЫПОЛНЯЕТСЯ ВСЕГДА!)
 # ----------------------------------------------------------------------
 def setup_bot():
     """Настройка бота - вызывается при импорте модуля"""
     logger.info("=" * 60)
     logger.info("🚀 ИНИЦИАЛИЗАЦИЯ TELEGRAM БОТА")
     logger.info("=" * 60)
-    logger.info(f"📁 Текущая рабочая директория: {os.getcwd()}")
-    logger.info(f"📂 Файлы в текущей директории: {os.listdir()}")
+    logger.info(f"📁 Рабочая директория: {os.getcwd()}")
     logger.info(f"🎨 Ожидаемые стикеры: {LOCAL_STICKER_PATHS}")
     
-    # Проверяем наличие стикеров
+    # Проверяем стикеры
     for sticker_path in LOCAL_STICKER_PATHS:
         if os.path.exists(sticker_path):
             size = os.path.getsize(sticker_path)
-            logger.info(f"   ✅ {sticker_path} найден ({size} байт)")
+            logger.info(f"   ✅ {sticker_path} ({size} байт)")
         else:
             logger.error(f"   ❌ {sticker_path} НЕ НАЙДЕН!")
     
-    logger.info("=" * 60)
-    
-    # Установка вебхука
-    logger.info("🌐 Установка вебхука...")
+    # Установка webhook
+    logger.info("🌐 Установка webhook...")
     try:
         bot.remove_webhook()
         time.sleep(1)
-        logger.info(f"   Устанавливаем webhook: {WEBHOOK_URL}")
         s = bot.set_webhook(url=WEBHOOK_URL)
         
         if s:
-            logger.info("   ✅ Webhook установлен успешно!")
-            # Проверяем webhook
+            logger.info(f"   ✅ Webhook установлен: {WEBHOOK_URL}")
             webhook_info = bot.get_webhook_info()
-            logger.info(f"   📋 Webhook URL: {webhook_info.url}")
-            logger.info(f"   📋 Pending updates: {webhook_info.pending_update_count}")
+            logger.info(f"   📊 Pending updates: {webhook_info.pending_update_count}")
             if webhook_info.last_error_date:
-                logger.warning(f"   ⚠️ Последняя ошибка webhook: {webhook_info.last_error_message}")
+                logger.warning(f"   ⚠️ Ошибка: {webhook_info.last_error_message}")
         else:
-            logger.error("   ❌ Ошибка при установке Webhook")
+            logger.error("   ❌ Ошибка установки webhook")
     except Exception as e:
-        logger.error(f"   ❌ КРИТИЧЕСКАЯ ОШИБКА при установке webhook: {e}", exc_info=True)
+        logger.error(f"   ❌ КРИТИЧЕСКАЯ ОШИБКА: {e}", exc_info=True)
     
     logger.info("=" * 60)
-    logger.info("✅ Инициализация завершена")
+    logger.info("✅ БОТА ГОТОВ К РАБОТЕ")
     logger.info("=" * 60)
     sys.stdout.flush()
 
 
-# ⚠️ КРИТИЧЕСКИ ВАЖНО: Вызываем setup_bot() при импорте модуля
-# Это гарантирует, что webhook установится даже при запуске через Gunicorn
+# ⚠️ ВЫЗЫВАЕМ setup_bot() СРАЗУ при импорте
 setup_bot()
 
 
 # ----------------------------------------------------------------------
-# 🚀 6. ЗАПУСК FLASK (только при прямом запуске)
+# 🚀 7. ЗАПУСК FLASK (только при прямом запуске)
 # ----------------------------------------------------------------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
