@@ -68,50 +68,57 @@ def webhook():
     try:
         if request.headers.get('content-type') == 'application/json':
             json_string = request.get_data().decode('utf-8')
-            logger.info(f"📥 Получен webhook от Telegram (длина: {len(json_string)})")
-            
             update = telebot.types.Update.de_json(json_string)
-            logger.info(f"✅ Webhook распарсен, update_id: {update.update_id}")
             
-            # 🔍 ДИАГНОСТИКА
+            # 🔍 ОБРАБОТКА СООБЩЕНИЙ
             if update.message:
                 msg = update.message
                 
-                # ⚠️ ОБРАБОТКА СООБЩЕНИЙ
                 try:
-                    # Проверяем каждый обработчик вручную
-                    for i, handler_dict in enumerate(bot.message_handlers):
+                    for handler_dict in bot.message_handlers:
                         handler_func = handler_dict['function']
                         filters = handler_dict.get('filters', {})
                         
                         # Проверяем фильтры команд
                         if 'commands' in filters:
-                            # Проверяем, является ли сообщение командой
                             if msg.entities and msg.entities[0].type == 'bot_command':
-                                # Поддержка команд с @username для групп
-                                command_text = msg.text.split()[0][1:]  # Убираем '/'
-                                # Убираем @bot_username если есть
+                                command_text = msg.text.split()[0][1:]
                                 command = command_text.split('@')[0]
                                 if command in filters['commands']:
                                     handler_func(msg)
                                     return '', 200
                         
-                        # Проверяем текстовые обработчики (для упоминаний @bot)
+                        # Проверяем текстовые обработчики
                         elif 'content_types' in filters and 'text' in filters['content_types']:
                             if msg.content_type == 'text':
-                                # Вызываем обработчик, он сам проверит условия
                                 handler_func(msg)
                                 
                 except Exception as e:
-                    logger.error(f"❌ Ошибка обработки: {e}", exc_info=True)
+                    logger.error(f"❌ Ошибка обработки сообщения: {e}", exc_info=True)
             
-            logger.info("✅ Webhook обработан")
+            # 🔍 ОБРАБОТКА INLINE QUERIES
+            elif update.inline_query:
+                inline_q = update.inline_query
+                logger.info(f"🔍 Получен inline query: '{inline_q.query}'")
+                
+                try:
+                    for handler_dict in bot.inline_handlers:
+                        handler_func = handler_dict['function']
+                        filter_func = handler_dict.get('func')
+                        
+                        if filter_func and filter_func(inline_q):
+                            handler_func(inline_q)
+                            logger.info("✅ Inline query обработан")
+                            break
+                    
+                except Exception as e:
+                    logger.error(f"❌ Ошибка inline: {e}", exc_info=True)
+            
             return '', 200
     except Exception as e:
         logger.error(f"❌ ОШИБКА в webhook: {e}", exc_info=True)
         return 'ERROR', 500
     
-    logger.warning("⚠️ Получен запрос без JSON")
     return 'OK', 200
 
 
@@ -322,10 +329,16 @@ def setup_bot():
     try:
         bot.remove_webhook()
         time.sleep(1)
-        s = bot.set_webhook(url=WEBHOOK_URL)
+        
+        # ⚠️ КРИТИЧЕСКИ ВАЖНО: указываем allowed_updates для inline queries
+        s = bot.set_webhook(
+            url=WEBHOOK_URL,
+            allowed_updates=["message", "inline_query"]  # Разрешаем inline queries!
+        )
         
         if s:
             logger.info(f"   ✅ Webhook установлен: {WEBHOOK_URL}")
+            logger.info(f"   📋 Allowed updates: message, inline_query")
         else:
             logger.error("   ❌ Ошибка установки webhook")
     except Exception as e:
