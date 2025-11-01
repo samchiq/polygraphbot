@@ -28,12 +28,15 @@ sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure'
 telebot_logger = logging.getLogger('TeleBot')
 telebot_logger.setLevel(logging.INFO)
 
-# --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ ---
-BOT_USERNAME = "mrpolygraph_bot"
+# --- ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ (ВСЕ ИЗ ОКРУЖЕНИЯ!) ---
+BOT_USERNAME = os.environ.get('BOT_USERNAME', 'your_bot')  # Имя бота без @
+API_TOKEN = os.environ.get('BOT_TOKEN')  # Токен бота
+SERVER_URL = os.environ.get('SERVER_URL')  # URL вашего Render сервиса
 
-# ⚠️ ИСПОЛЬЗУЕМ ПЕРЕМЕННЫЕ ОКРУЖЕНИЯ RENDER
-API_TOKEN = os.environ.get('BOT_TOKEN', '8320176221:AAE-Yhi95YxEp5P7f1_q2da9VeQeskofRCI') 
-SERVER_URL = os.environ.get("SERVER_URL", "https://polygraphbot.onrender.com")
+if not API_TOKEN:
+    raise ValueError("❌ BOT_TOKEN не установлен в переменных окружения!")
+if not SERVER_URL:
+    raise ValueError("❌ SERVER_URL не установлен в переменных окружения!")
 
 WEBHOOK_PATH = '/'
 WEBHOOK_URL = f"{SERVER_URL}{WEBHOOK_PATH}"
@@ -187,7 +190,7 @@ def query_text(inline_query):
         title_text = f"Проверить: {user_query}"
         message_content = f"@{BOT_USERNAME} {user_query}"
     else:
-        title_text = "Проверка"
+        title_text = "🎲 Случайный стикер"
         message_content = f"@{BOT_USERNAME}"
     
     text_result = types.InlineQueryResultArticle(
