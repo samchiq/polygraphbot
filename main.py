@@ -70,6 +70,9 @@ def webhook():
             json_string = request.get_data().decode('utf-8')
             update = telebot.types.Update.de_json(json_string)
             
+            # 📝 ЛОГИРУЕМ ТИП UPDATE
+            logger.info(f"📨 Update type: message={bool(update.message)}, inline={bool(update.inline_query)}, callback={bool(update.callback_query)}")
+            
             # 🔍 ОБРАБОТКА СООБЩЕНИЙ
             if update.message:
                 msg = update.message
@@ -79,7 +82,6 @@ def webhook():
                         handler_func = handler_dict['function']
                         filters = handler_dict.get('filters', {})
                         
-                        # Проверяем фильтры команд
                         if 'commands' in filters:
                             if msg.entities and msg.entities[0].type == 'bot_command':
                                 command_text = msg.text.split()[0][1:]
@@ -88,7 +90,6 @@ def webhook():
                                     handler_func(msg)
                                     return '', 200
                         
-                        # Проверяем текстовые обработчики
                         elif 'content_types' in filters and 'text' in filters['content_types']:
                             if msg.content_type == 'text':
                                 handler_func(msg)
@@ -99,20 +100,18 @@ def webhook():
             # 🔍 ОБРАБОТКА INLINE QUERIES
             elif update.inline_query:
                 inline_q = update.inline_query
-                logger.info(f"🔍 Получен inline query: '{inline_q.query}'")
+                logger.info(f"🔍 INLINE QUERY! От: {inline_q.from_user.id}, текст: '{inline_q.query}'")
                 
                 try:
-                    for handler_dict in bot.inline_handlers:
-                        handler_func = handler_dict['function']
-                        filter_func = handler_dict.get('func')
-                        
-                        if filter_func and filter_func(inline_q):
-                            handler_func(inline_q)
-                            logger.info("✅ Inline query обработан")
-                            break
+                    # Пробуем вызвать обработчик напрямую
+                    query_text(inline_q)
+                    logger.info("✅ Inline обработчик вызван напрямую")
                     
                 except Exception as e:
                     logger.error(f"❌ Ошибка inline: {e}", exc_info=True)
+            
+            else:
+                logger.warning(f"⚠️ Неизвестный тип update")
             
             return '', 200
     except Exception as e:
@@ -178,6 +177,8 @@ print("=" * 60, flush=True)
 @bot.inline_handler(lambda query: True)
 def query_text(inline_query):
     user_query = inline_query.query
+    
+    logger.info(f"🔍 INLINE обработчик вызван! Query: '{user_query}', User: {inline_query.from_user.id}")
 
     if user_query:
         title_text = f"Проверить: {user_query}"
@@ -193,7 +194,8 @@ def query_text(inline_query):
     )
 
     try:
-        bot.answer_inline_query(inline_query.id, [r], cache_time=0)
+        result = bot.answer_inline_query(inline_query.id, [r], cache_time=0)
+        logger.info(f"✅ Inline query обработан! Результат: {result}")
     except Exception as e:
         logger.error(f"❌ Ошибка в inline-обработчике: {e}", exc_info=True)
 
@@ -249,15 +251,33 @@ sys.stdout.flush()
 def health():
     """Endpoint для проверки работоспособности бота."""
     existing_stickers = [path for path in LOCAL_STICKER_PATHS if os.path.exists(path)]
+    
+    # Получаем информацию о webhook
+    try:
+        webhook_info = bot.get_webhook_info()
+        webhook_data = {
+            'url': webhook_info.url,
+            'has_custom_certificate': webhook_info.has_custom_certificate,
+            'pending_update_count': webhook_info.pending_update_count,
+            'last_error_date': webhook_info.last_error_date,
+            'last_error_message': webhook_info.last_error_message,
+            'max_connections': webhook_info.max_connections,
+            'allowed_updates': webhook_info.allowed_updates
+        }
+    except Exception as e:
+        webhook_data = {'error': str(e)}
+    
     status = {
         'status': 'running',
         'stickers_found': len(existing_stickers),
-        'sticker_files': existing_stickers,
-        'current_dir': os.getcwd(),
-        'all_files': os.listdir()[:20],  # Первые 20 файлов
-        'webhook_url': WEBHOOK_URL
+        'sticker_file_ids_cached': len(STICKER_FILE_IDS),
+        'webhook_info': webhook_data,
+        'handlers': {
+            'message_handlers': len(bot.message_handlers),
+            'inline_handlers': len(bot.inline_handlers)
+        }
     }
-    logger.info(f"🏥 Health check запрошен")
+    
     return status, 200
 
 
