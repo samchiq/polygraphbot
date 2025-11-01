@@ -81,6 +81,8 @@ def webhook():
                 msg = update.message
                 
                 try:
+                    handled = False  # Флаг, чтобы отследить обработку
+                    
                     for handler_dict in bot.message_handlers:
                         handler_func = handler_dict['function']
                         filters = handler_dict.get('filters', {})
@@ -91,10 +93,11 @@ def webhook():
                                 command = command_text.split('@')[0]
                                 if command in filters['commands']:
                                     handler_func(msg)
-                                    return '', 200
+                                    handled = True
+                                    break  # Прерываем после обработки команды
                         
                         elif 'content_types' in filters and 'text' in filters['content_types']:
-                            if msg.content_type == 'text':
+                            if msg.content_type == 'text' and not handled:
                                 handler_func(msg)
                                 
                 except Exception as e:
@@ -130,9 +133,16 @@ def webhook():
 def send_random_content_handler(message):
     """Отправляет случайный стикер, используя кэшированный file_id."""
     
+    # Определяем, на какое сообщение отвечать
+    # Если команда была в ответ на другое сообщение - отвечаем на то сообщение
+    # Иначе отвечаем на команду
+    if message.reply_to_message:
+        reply_id = message.reply_to_message.message_id
+    else:
+        reply_id = message.message_id
+    
     # Если есть кэш - используем его
     if STICKER_FILE_IDS:
-        reply_id = message.reply_to_message.message_id if message.reply_to_message else message.message_id
         selected_file_id = random.choice(STICKER_FILE_IDS)
 
         try:
@@ -155,7 +165,6 @@ def send_random_content_handler(message):
         bot.reply_to(message, "🚫 Ошибка: Стикеры недоступны.")
         return
     
-    reply_id = message.reply_to_message.message_id if message.reply_to_message else message.message_id
     selected_sticker = random.choice(existing_stickers)
 
     try:
