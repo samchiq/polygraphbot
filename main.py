@@ -180,22 +180,26 @@ def query_text(inline_query):
     
     logger.info(f"🔍 INLINE обработчик вызван! Query: '{user_query}', User: {inline_query.from_user.id}")
 
+    results = []
+    
+    # ВСЕГДА показываем текстовое превью
     if user_query:
         title_text = f"Проверить: {user_query}"
         message_content = f"@{BOT_USERNAME} {user_query}"
     else:
-        title_text = "Нажмите для проверки"
-        message_content = f"@{BOT_USERNAME} "
-
-    r = types.InlineQueryResultArticle(
-        id='1',
+        title_text = "🎲 Случайный стикер"
+        message_content = f"@{BOT_USERNAME}"
+    
+    text_result = types.InlineQueryResultArticle(
+        id='text_1',
         title=title_text,
         input_message_content=types.InputTextMessageContent(message_text=message_content)
     )
+    results.append(text_result)
 
     try:
-        result = bot.answer_inline_query(inline_query.id, [r], cache_time=0)
-        logger.info(f"✅ Inline query обработан! Результат: {result}")
+        result = bot.answer_inline_query(inline_query.id, results, cache_time=0)
+        logger.info(f"✅ Inline query обработан!")
     except Exception as e:
         logger.error(f"❌ Ошибка в inline-обработчике: {e}", exc_info=True)
 
@@ -230,10 +234,14 @@ sys.stdout.flush()
 
 @bot.message_handler(content_types=['text'])
 def send_random_image(message):
-    if f'@{BOT_USERNAME}' in message.text:
+    # Проверяем упоминание бота ИЛИ сообщения через inline (via_bot)
+    is_mention = f'@{BOT_USERNAME}' in message.text
+    is_via_bot = message.via_bot and message.via_bot.username == BOT_USERNAME
+    
+    if is_mention or is_via_bot:
         send_random_content_handler(message)
 
-print("✅ Handler registered: text (with @mention check)", flush=True)
+print("✅ Handler registered: text (with @mention or via_bot check)", flush=True)
 sys.stdout.flush()
 
 
