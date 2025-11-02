@@ -199,7 +199,7 @@ def query_text(inline_query):
         title_text = f"Проверить: {user_query}"
         message_content = f"@{BOT_USERNAME} {user_query}"
     else:
-        title_text = "🎲 Случайный стикер"
+        title_text = "Проверка"
         message_content = f"@{BOT_USERNAME}"
     
     text_result = types.InlineQueryResultArticle(
