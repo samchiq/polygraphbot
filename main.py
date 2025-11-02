@@ -195,12 +195,12 @@ def query_text(inline_query):
     results = []
     
     # ВСЕГДА показываем текстовое превью
-if user_query:
-    title_text = f"Проверить: {user_query}"
-    message_content = user_query  # БЕЗ тега!
-else:
-    title_text = "🎲 Случайный стикер"
-    message_content = "🎲"  # БЕЗ тега!
+    if user_query:
+        title_text = f"Проверить: {user_query}"
+        message_content = f"@{BOT_USERNAME} {user_query}"
+    else:
+        title_text = "Проверка"
+        message_content = f"@{BOT_USERNAME}"
     
     text_result = types.InlineQueryResultArticle(
         id='text_1',
